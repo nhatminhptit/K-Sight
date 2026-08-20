@@ -1,0 +1,8 @@
+node_modules
+.env
+
+/src/generated/
+*.db
+*.sqlite
+*.sqlite3
+dev.db
