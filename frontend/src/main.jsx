@@ -14,7 +14,7 @@ createRoot(document.getElementById("root")).render(
   <StrictMode>
     <Provider store={store}>
       <QueryClientProvider client={queryClient}>
-        <GoogleOAuthProvider clientId="954428711596-hhdate05h0catcbh0pogcjgml0a1qfq4.apps.googleusercontent.com">
+        <GoogleOAuthProvider clientId={googleClientId}>
           <App />
         </GoogleOAuthProvider>
       </QueryClientProvider>

@@ -28,16 +28,6 @@ const MainLayout = () => {
   };
 
   const handleProfileClick = () => {
-    if (!user) {
-      navigate("/login");
-      return;
-    }
-
-    if (!user.riotId?.trim()) {
-      setShowWarningModal(true);
-      return;
-    }
-
     navigate("/my-profile");
   };
 

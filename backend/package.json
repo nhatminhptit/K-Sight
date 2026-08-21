@@ -19,12 +19,10 @@
   },
   "type": "module",
   "dependencies": {
-    "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "axios": "^1.19.0",
     "bcrypt": "^6.0.0",
-    "better-sqlite3": "^13.0.2",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

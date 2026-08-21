@@ -108,9 +108,7 @@ const Profile = () => {
   const { targetName, targetTag } = useMemo(() => {
     const routeName = name?.trim() || "";
     const routeTag = tag?.trim() || "";
-    const fallbackRiotId =
-      reduxUser?.riotId?.trim() ||
-      "";
+    const fallbackRiotId = reduxUser?.riotId?.trim() || "";
 
     if (routeName && routeTag) {
       return {
@@ -127,11 +125,7 @@ const Profile = () => {
       targetName: fallbackName,
       targetTag: fallbackTag,
     };
-  }, [
-    name,
-    tag,
-    reduxUser?.riotId,
-  ]);
+  }, [name, tag, reduxUser?.riotId]);
 
   const {
     data: playerData,
@@ -149,7 +143,7 @@ const Profile = () => {
         : axiosClient.get(
             `/profile/${encodeURIComponent(targetName)}/${encodeURIComponent(targetTag)}`,
           ),
-    enabled: isAuthenticated && (onMyProfileRoute ? true : !!targetName && !!targetTag),
+    enabled: onMyProfileRoute ? isAuthenticated : !!targetName && !!targetTag,
     retry: 1,
   });
 
@@ -205,7 +199,12 @@ const Profile = () => {
   const rankName = profile?.mmr?.rank_name ?? "Unranked";
   const rrPoints = profile?.mmr?.rr_points ?? 0;
 
-  if (onMyProfileRoute && isAuthenticated && isError && error?.response?.status === 404) {
+  if (
+    onMyProfileRoute &&
+    isAuthenticated &&
+    isError &&
+    error?.response?.status === 404
+  ) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 py-6">
         <div className="w-full max-w-lg rounded-3xl bg-[#111b26] border border-[#ff4655]/30 p-6 shadow-2xl">
@@ -377,7 +376,7 @@ const Profile = () => {
     );
   }
 
-  if (!isAuthenticated) {
+  if (onMyProfileRoute && !isAuthenticated) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[75vh] w-full px-4">
         <motion.div

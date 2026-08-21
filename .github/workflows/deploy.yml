@@ -1,0 +1,36 @@
+name: Deploy K-Sight to VPS
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH into VPS and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            cd /root/K-Sight
+            git fetch --all
+            git reset --hard origin/master
+
+            # Tạo file .env cho Frontend
+            cd frontend
+            echo "VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}" > .env
+            pnpm install
+            pnpm run build
+
+            # TỰ ĐỘNG TẠO FILE .ENV CHO BACKEND
+            cd ../backend
+            echo "${{ secrets.BACKEND_ENV }}" > .env
+
+            # Cài và khởi động lại Backend
+            pnpm install
+            pm2 restart server
