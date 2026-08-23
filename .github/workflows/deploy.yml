@@ -23,7 +23,7 @@ jobs:
 
             # Tạo file .env cho Frontend
             cd frontend
-            echo "VITE_GOOGLE_CLIENT_ID=${{ secrets.VITE_GOOGLE_CLIENT_ID }}" > .env
+            echo "${{ secrets.FRONTEND_ENV }}" > .env
             pnpm install
             pnpm run build
 

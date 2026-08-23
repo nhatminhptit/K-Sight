@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import BlurText from "../components/BlurText";
@@ -7,6 +7,32 @@ import SideRays from "../components/SideRays";
 import toast from "react-hot-toast"; // Import toast cho form
 import axiosClient from "../utils/axiosClient";
 import { updateUser } from "../store/authSlice";
+
+const VALORANT_VIETNAM_CHANNEL_ID = "UCcr4x4DBzRD0871Vq9QyyaA";
+
+const fetchLatestValorantVideo = async (signal) => {
+  const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${VALORANT_VIETNAM_CHANNEL_ID}`;
+  const response = await fetch(
+    `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`,
+    { signal },
+  );
+
+  if (!response.ok) throw new Error("Không thể tải video mới nhất.");
+
+  const data = await response.json();
+  const videoId = data.items?.[0]?.guid?.split(":").pop();
+  if (!videoId) throw new Error("Không tìm thấy video mới nhất.");
+
+  return `https://www.youtube.com/embed/${videoId}`;
+};
+
+const fetchCityByIp = async (signal) => {
+  const response = await fetch("https://ipapi.co/json/", { signal });
+  if (!response.ok) throw new Error("Không thể xác định vị trí.");
+
+  const data = await response.json();
+  return data.city || "Không xác định";
+};
 
 // Component con: Xử lý hiệu ứng đóng mở mượt mà cho từng câu hỏi FAQ
 const FAQItem = ({ q, a, index }) => {
@@ -71,9 +97,29 @@ const Home = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRiotId, setModalRiotId] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [city, setCity] = useState("Đang xác định...");
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth?.user);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetchLatestValorantVideo(controller.signal)
+      .then(setVideoUrl)
+      .catch((error) => {
+        if (error.name !== "AbortError") setVideoUrl("");
+      });
+
+    fetchCityByIp(controller.signal)
+      .then(setCity)
+      .catch((error) => {
+        if (error.name !== "AbortError") setCity("Không xác định");
+      });
+
+    return () => controller.abort();
+  }, []);
 
   const handleOpenModal = () => {
     setModalRiotId(user?.riotId || "");
@@ -162,14 +208,14 @@ const Home = () => {
               delay={50}
               animateBy="words"
               direction="top"
-              className="text-3xl md:text-5xl font-bold text-gray-300 uppercase tracking-widest group-hover:text-white"
+              className="text-2xl md:text-5xl font-bold text-gray-300 uppercase tracking-widest group-hover:text-white"
             />
             <BlurText
               text="VALORANT STATS"
               delay={150}
               animateBy="words"
               direction="bottom"
-              className="text-5xl md:text-7xl font-black text-white uppercase tracking-tighter drop-shadow-[0_0_15px_rgba(255,70,85,0.4)] group-hover:text-[#ff4655] group-hover:drop-shadow-[0_0_40px_rgba(255,70,85,0.8)]"
+              className="text-4xl md:text-7xl font-black text-white uppercase tracking-tighter drop-shadow-[0_0_15px_rgba(255,70,85,0.4)] group-hover:text-[#ff4655] group-hover:drop-shadow-[0_0_40px_rgba(255,70,85,0.8)]"
             />
           </motion.div>
 
@@ -347,19 +393,25 @@ const Home = () => {
               whileInView={{ opacity: 1, y: 0 }}
               whileHover={{ scale: 1.02 }}
               viewport={{ once: false }}
-              className="bg-[#1f2937]/30 border border-gray-800 p-4 rounded-sm"
+              className="w-full min-w-0 bg-[#1f2937]/30 border border-gray-800 p-4 md:p-6 rounded-sm relative overflow-hidden group hover:border-[#ff4655]/40 transition-colors"
             >
-              <h4 className="text-gray-400 uppercase text-sm font-bold tracking-widest mb-4">
-                Mã hóa: Tập 8 Cinematic
+              <h4 className="text-gray-400 uppercase text-sm font-bold tracking-widest mb-4 group-hover:text-white">
+                Youtube: VALORANT Vietnam
               </h4>
               <div className="relative aspect-video w-full rounded overflow-hidden border border-gray-700/50">
-                <iframe
-                  className="absolute inset-0 w-full h-full"
-                  src="https://www.youtube.com/embed/Z_lZqB-Yc_s?si=fLh1q-B9B233C8O_"
-                  title="Valorant"
-                  frameBorder="0"
-                  allowFullScreen
-                ></iframe>
+                {videoUrl ? (
+                  <iframe
+                    className="absolute inset-0 w-full h-full"
+                    src={videoUrl}
+                    title="Video mới nhất từ VALORANT Vietnam"
+                    frameBorder="0"
+                    allowFullScreen
+                  ></iframe>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
+                    Đang tải video mới nhất...
+                  </div>
+                )}
               </div>
             </motion.div>
 
@@ -369,12 +421,12 @@ const Home = () => {
               whileHover={{ scale: 1.02 }}
               viewport={{ once: false }}
               transition={{ delay: 0.1 }}
-              className="bg-[#1f2937]/30 border border-gray-800 p-6 rounded-sm relative overflow-hidden group hover:border-[#ff4655]/40 transition-colors"
+              className="w-full min-w-0 bg-[#1f2937]/30 border border-gray-800 p-4 md:p-6 rounded-sm relative overflow-hidden group hover:border-[#ff4655]/40 transition-colors"
             >
               <h4 className="text-gray-400 uppercase text-sm font-bold tracking-widest mb-4 group-hover:text-white">
                 Định vị Hệ thống
               </h4>
-              <div className="w-full h-[85%] bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-opacity-20 border border-[#ff4655]/20 relative flex items-center justify-center bg-[#0a1017]">
+              <div className="w-full min-h-72 md:h-[85%] bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-opacity-20 border border-[#ff4655]/20 relative flex items-center justify-center bg-[#0a1017]">
                 <motion.div
                   animate={{ rotate: 360 }}
                   transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
@@ -386,10 +438,10 @@ const Home = () => {
                   <div className="w-4 h-4 bg-[#ff4655] rounded-full shadow-[0_0_15px_rgba(255,70,85,1)] animate-pulse"></div>
                   <div className="mt-4 text-center">
                     <p className="text-white font-bold tracking-widest text-lg">
-                      TRẠM HÀ NỘI
+                      Vị trí: {city}
                     </p>
                     <p className="text-[#ff4655] text-xs font-mono mt-1">
-                      LAT: 21.0285 | LNG: 105.8542
+                      Server Valorant tối ưu: Hong Kong 1
                     </p>
                   </div>
                 </div>

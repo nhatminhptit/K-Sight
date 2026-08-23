@@ -19,7 +19,7 @@ export const verifyToken = (req, res, next) => {
     next();
   } catch (error) {
     return res
-      .status(403)
+      .status(401)
       .json({ message: "Vé của bạn không hợp lệ hoặc đã hết hạn!" });
   }
 };

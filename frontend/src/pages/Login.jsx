@@ -128,7 +128,7 @@ export default function Login() {
           alt="Valorant background"
           className="w-full h-full object-cover opacity-90"
         />
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0f1923]/90 via-[#0d151f]/75 to-[#000000]/95"></div>
+        <div className="absolute inset-0 bg-linear-to-br from-[#0f1923]/90 via-[#0d151f]/75 to-[#000000]/95"></div>
         <div className="absolute inset-0 bg-black/75"></div>
       </div>
       <div className="absolute inset-0 z-10 pointer-events-none">

@@ -1,9 +1,11 @@
 import { Outlet, Link, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import Footer from "../components/Footer";
 import DecryptedText from "../components/DecryptedText";
 import { Toaster, toast } from "react-hot-toast";
+import { Menu, X } from "lucide-react";
 import axiosClient from "../utils/axiosClient";
 import { logout, updateUser } from "../store/authSlice";
 
@@ -16,6 +18,7 @@ const MainLayout = () => {
   const [showRiotIdFormModal, setShowRiotIdFormModal] = useState(false);
   const [riotIdInput, setRiotIdInput] = useState("");
   const [isUpdatingRiotId, setIsUpdatingRiotId] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleAuthButtonClick = () => {
     if (isAuthenticated) {
@@ -28,7 +31,13 @@ const MainLayout = () => {
   };
 
   const handleProfileClick = () => {
+    setIsMobileMenuOpen(false);
     navigate("/my-profile");
+  };
+
+  const handleLoginClick = () => {
+    setIsMobileMenuOpen(false);
+    navigate("/login");
   };
 
   const handleCloseWarningModal = () => {
@@ -125,6 +134,7 @@ const MainLayout = () => {
           <nav className="hidden md:flex gap-8 items-center">
             <Link
               to="/"
+              onClick={() => setIsMobileMenuOpen(false)}
               className="text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
             >
               Tra cứu
@@ -148,7 +158,53 @@ const MainLayout = () => {
               </span>
             </button>
           </nav>
+
+          <button
+            type="button"
+            aria-label={isMobileMenuOpen ? "Đóng menu" : "Mở menu"}
+            aria-expanded={isMobileMenuOpen}
+            onClick={() => setIsMobileMenuOpen((open) => !open)}
+            className="inline-flex items-center justify-center border border-[#ff4655]/60 p-2 text-[#ff4655] md:hidden"
+          >
+            {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
         </div>
+
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.nav
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="overflow-hidden border-t border-[#ff4655]/20 bg-[#0f1923] px-6 py-3 md:hidden"
+            >
+              <Link
+                to="/"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
+              >
+                Tra cứu
+              </Link>
+              <button
+                type="button"
+                onClick={handleProfileClick}
+                className="block w-full border-b border-white/10 py-3 text-left text-sm font-bold uppercase tracking-widest text-gray-300"
+              >
+                Hồ sơ
+              </button>
+              <button
+                type="button"
+                onClick={
+                  isAuthenticated ? handleAuthButtonClick : handleLoginClick
+                }
+                className="block w-full py-3 text-left text-sm font-bold uppercase tracking-widest text-[#ff4655]"
+              >
+                {isAuthenticated ? "Đăng xuất" : "Đăng nhập"}
+              </button>
+            </motion.nav>
+          )}
+        </AnimatePresence>
       </header>
 
       <main className="grow relative z-10">

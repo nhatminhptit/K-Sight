@@ -105,6 +105,11 @@ const Profile = () => {
     navigate(`/profile/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
   };
 
+  const handleOpenLinkModal = () => {
+    setLinkRiotId(reduxUser?.riotId || "");
+    setShowLinkModal(true);
+  };
+
   const { targetName, targetTag } = useMemo(() => {
     const routeName = name?.trim() || "";
     const routeTag = tag?.trim() || "";
@@ -298,6 +303,10 @@ const Profile = () => {
     );
   }
 
+  if (isError && [401, 403].includes(error?.response?.status)) {
+    return null;
+  }
+
   const myProfileNotFound =
     onMyProfileRoute && isError && error?.response?.status === 404;
 
@@ -482,6 +491,104 @@ const Profile = () => {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
+      {isAuthenticated && (
+        <section className="mb-8 w-full rounded-3xl border border-[#ff4655]/20 bg-[#111b26]/90 p-6 shadow-[0_0_40px_rgba(255,70,85,0.08)] md:p-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="mb-2 text-sm font-bold uppercase tracking-[0.3em] text-[#ff4655]">
+                Quản lý Riot ID
+              </div>
+              <div className="text-lg font-semibold text-white">
+                {reduxUser?.riotId
+                  ? `Riot ID đang liên kết: ${reduxUser.riotId}`
+                  : "Chưa liên kết Riot ID"}
+              </div>
+              <p className="mt-2 text-sm text-[#b0b7c1]">
+                {reduxUser?.riotId
+                  ? "Nhấp Thay đổi để cập nhật Riot ID mới."
+                  : "Liên kết Riot ID để truy xuất nhanh hồ sơ."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOpenLinkModal}
+              className="rounded-2xl bg-[#ff4655] px-6 py-3 text-sm font-semibold uppercase tracking-widest text-white shadow-[0_0_30px_rgba(255,70,85,0.18)] transition hover:bg-[#e03e4d]"
+            >
+              {reduxUser?.riotId ? "Thay đổi" : "Liên kết ngay"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {isAuthenticated && showLinkModal && (
+        <AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="w-full max-w-lg rounded-3xl border border-[#ff4655]/20 bg-[#0f1923] p-6 shadow-2xl shadow-[#ff4655]/10"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-semibold text-white">
+                    Cập nhật Riot ID
+                  </h2>
+                  <p className="mt-1 text-sm text-[#b0b7c1]">
+                    Nhập Riot ID theo định dạng Tên#Tag (ví dụ: TenZ#VN1).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLinkModal(false)}
+                  className="text-[#b0b7c1] hover:text-white"
+                >
+                  Đóng
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <label className="block text-sm font-medium text-[#d9d9d9]">
+                  Riot ID
+                </label>
+                <input
+                  type="text"
+                  value={linkRiotId}
+                  onChange={(e) => setLinkRiotId(e.target.value)}
+                  className="w-full rounded-2xl border border-[#ff4655]/20 bg-[#111b26] px-4 py-3 text-white placeholder-[#8892a4] outline-none focus:border-[#ff4655] focus:ring-1 focus:ring-[#ff4655]/30"
+                  placeholder="Ví dụ: TenZ#VN1"
+                />
+
+                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkModal(false)}
+                    className="rounded-2xl border border-[#5f6872] px-5 py-3 text-sm font-semibold text-[#b0b7c1] hover:bg-white/5"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => linkMutation.mutate(linkRiotId)}
+                    disabled={linkMutation.isPending}
+                    className="rounded-2xl bg-[#ff4655] px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-[#e03e4d] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {linkMutation.isPending ? "Đang lưu..." : "Lưu"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+
       <motion.form
         variants={containerVariants}
         initial="hidden"
