@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import BlurText from "../components/BlurText";
@@ -7,32 +7,47 @@ import SideRays from "../components/SideRays";
 import toast from "react-hot-toast"; // Import toast cho form
 import axiosClient from "../utils/axiosClient";
 import { updateUser } from "../store/authSlice";
+import useFetchPublicData from "../hooks/useFetchPublicData";
 
-const VALORANT_VIETNAM_CHANNEL_ID = "UCcr4x4DBzRD0871Vq9QyyaA";
-
-const fetchLatestValorantVideo = async (signal) => {
-  const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${VALORANT_VIETNAM_CHANNEL_ID}`;
-  const response = await fetch(
-    `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}`,
-    { signal },
-  );
-
-  if (!response.ok) throw new Error("Không thể tải video mới nhất.");
-
-  const data = await response.json();
-  const videoId = data.items?.[0]?.guid?.split(":").pop();
-  if (!videoId) throw new Error("Không tìm thấy video mới nhất.");
-
-  return `https://www.youtube.com/embed/${videoId}`;
-};
-
-const fetchCityByIp = async (signal) => {
-  const response = await fetch("https://ipapi.co/json/", { signal });
-  if (!response.ok) throw new Error("Không thể xác định vị trí.");
-
-  const data = await response.json();
-  return data.city || "Không xác định";
-};
+const RECENT_SEARCHES_KEY = "k-sight-recent-searches";
+const MAX_RECENT_SEARCHES = 6;
+const AGENTS_URL =
+  "https://valorant-api.com/v1/agents?isPlayableCharacter=true";
+const SEASONS_URL = "https://valorant-api.com/v1/seasons";
+const META_SPOTLIGHT = [
+  {
+    name: "Waylay",
+    role: "Initiator",
+    image: "",
+    pickRate: "12.8%",
+    winRate: "51.4%",
+    signal: "HIGH MOBILITY",
+  },
+  {
+    name: "Clove",
+    role: "Controller",
+    image: "",
+    pickRate: "18.2%",
+    winRate: "50.9%",
+    signal: "POST-MORTEM",
+  },
+  {
+    name: "Gekko",
+    role: "Initiator",
+    image: "",
+    pickRate: "15.6%",
+    winRate: "52.1%",
+    signal: "UTILITY CORE",
+  },
+  {
+    name: "Iso",
+    role: "Duelist",
+    image: "",
+    pickRate: "10.4%",
+    winRate: "50.6%",
+    signal: "DUEL PRESSURE",
+  },
+];
 
 // Component con: Xử lý hiệu ứng đóng mở mượt mà cho từng câu hỏi FAQ
 const FAQItem = ({ q, a, index }) => {
@@ -91,35 +106,99 @@ const FAQItem = ({ q, a, index }) => {
   );
 };
 
+const PublicDataEmptyState = ({ children, className = "" }) => (
+  <div
+    className={`flex min-h-32 flex-col items-center justify-center gap-2 border border-[#ff4655]/25 bg-[#ff4655]/5 p-5 text-center ${className}`}
+  >
+    <span className="text-xs font-bold uppercase tracking-[0.18em] text-[#ff4655]">
+      Tín hiệu tạm gián đoạn
+    </span>
+    <p className="text-sm text-gray-400">{children}</p>
+  </div>
+);
+
+const formatSeasonCountdown = (endTime, now) => {
+  const remaining = new Date(endTime).getTime() - now;
+  if (!Number.isFinite(remaining) || remaining <= 0) return "Đang cập nhật";
+
+  const totalSeconds = Math.floor(remaining / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return `${days}N ${hours}G ${minutes}P`;
+};
+
 // COMPONENT CHÍNH
 const Home = () => {
   const [riotId, setRiotId] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalRiotId, setModalRiotId] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
-  const [videoUrl, setVideoUrl] = useState("");
-  const [city, setCity] = useState("Đang xác định...");
+  const [latestVideoId] = useState("hQHpkH-ut3Y");
+  const [now, setNow] = useState(0);
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(RECENT_SEARCHES_KEY) || "[]",
+      );
+      return Array.isArray(saved)
+        ? saved
+            .filter((value) => typeof value === "string")
+            .slice(0, MAX_RECENT_SEARCHES)
+        : [];
+    } catch {
+      return [];
+    }
+  });
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth?.user);
+  const agentsRequest = useFetchPublicData(AGENTS_URL);
+  const seasonsRequest = useFetchPublicData(SEASONS_URL);
+  const agentIcons = useMemo(() => {
+    const agents = Array.isArray(agentsRequest.data?.data)
+      ? agentsRequest.data.data
+      : [];
+    return agents.reduce((icons, agent) => {
+      if (agent?.displayName && agent?.displayIcon) {
+        icons[agent.displayName.toLowerCase()] = agent.displayIcon;
+      }
+      return icons;
+    }, {});
+  }, [agentsRequest.data]);
+  const activeSeason = useMemo(() => {
+    const data = seasonsRequest.data;
+    if (!Array.isArray(data?.data) || data.data.length === 0) return null;
+
+    // 1. Chỉ lọc lấy các Mùa giải nhỏ (Act), loại bỏ các Episode tổng bị lỗi "title: null"
+    const acts = data.data.filter(
+      (season) => season.type === "EAresSeasonType::Act",
+    );
+
+    // 2. Tìm mùa giải đang diễn ra dựa trên thời gian thực tế
+    const now = new Date();
+    const currentAct = acts.find((season) => {
+      const start = new Date(season.startTime);
+      const end = new Date(season.endTime);
+      return start <= now && now <= end;
+    });
+
+    // 3. Trả về mùa hiện tại, nếu không khớp thời gian thì dự phòng lấy Act mới nhất
+    return currentAct || acts[acts.length - 1];
+  }, [seasonsRequest.data]);
+  const seasonCountdown = activeSeason
+    ? formatSeasonCountdown(activeSeason.endTime, now)
+    : null;
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    fetchLatestValorantVideo(controller.signal)
-      .then(setVideoUrl)
-      .catch((error) => {
-        if (error.name !== "AbortError") setVideoUrl("");
-      });
-
-    fetchCityByIp(controller.signal)
-      .then(setCity)
-      .catch((error) => {
-        if (error.name !== "AbortError") setCity("Không xác định");
-      });
-
-    return () => controller.abort();
-  }, []);
+    if (!activeSeason?.endTime) return undefined;
+    const initialUpdateId = setTimeout(() => setNow(Date.now()), 0);
+    const intervalId = setInterval(() => setNow(Date.now()), 60000);
+    return () => {
+      clearTimeout(initialUpdateId);
+      clearInterval(intervalId);
+    };
+  }, [activeSeason?.endTime]);
 
   const handleOpenModal = () => {
     setModalRiotId(user?.riotId || "");
@@ -169,13 +248,47 @@ const Home = () => {
     const n = parts[0]?.trim();
     const t = parts[1]?.trim();
     if (!n || !t) return;
-    navigate(`/profile/${n}/${t}`);
+    const normalized = `${n}#${t}`;
+    setRecentSearches((previous) => {
+      const next = [
+        normalized,
+        ...previous.filter(
+          (search) => search.toLowerCase() !== normalized.toLowerCase(),
+        ),
+      ].slice(0, MAX_RECENT_SEARCHES);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+      } catch {
+        // Searching still works when browser storage is unavailable.
+      }
+      return next;
+    });
+    navigate(`/profile/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
+  };
+
+  const handleRemoveRecentSearch = (searchToRemove) => {
+    setRecentSearches((previous) => {
+      const next = previous.filter((search) => search !== searchToRemove);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+      } catch {
+        // Keep the in-memory list usable if storage is blocked.
+      }
+      return next;
+    });
+  };
+
+  const handleRecentSearch = (search) => {
+    setRiotId(search);
+    const [n, t] = search.split("#").map((part) => part.trim());
+    if (n && t)
+      navigate(`/profile/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
   };
 
   const faqData = [
     {
       q: "Dữ liệu trận đấu có được cập nhật theo thời gian thực không?",
-      a: "Có. K-Sight kết nối trực tiếp với HenrikDev API. Ngay sau khi trận đấu của bạn kết thúc, dữ liệu sẽ được đồng bộ lên hệ thống trong vòng 1-2 phút.",
+      a: "Có. K-Sight đồng bộ dữ liệu qua hệ thống backend an toàn. Ngay sau khi trận đấu của bạn kết thúc, dữ liệu sẽ được cập nhật trong vòng 1-2 phút.",
     },
     {
       q: "Tại sao tôi không tìm thấy Riot ID của mình?",
@@ -188,20 +301,20 @@ const Home = () => {
   ];
 
   return (
-    <div className="w-full bg-[#0b1219]">
+    <div className="tactical-page w-full bg-[#0b1219]">
       {/* ===== SECTION 1: HERO ===== */}
-      <section className="relative flex flex-col items-center justify-center min-h-[calc(100vh-72px)] w-full px-4 overflow-hidden">
+      <section className="relative flex flex-col items-center justify-center min-h-[calc(100vh-72px)] w-full px-4">
         <div className="absolute inset-0 z-0 opacity-60 pointer-events-none flex items-center justify-center">
           <SideRays />
         </div>
 
-        <div className="text-center space-y-8 w-full max-w-4xl z-10 relative">
+        <div className="text-center space-y-6 w-full max-w-4xl z-10 relative">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: false }}
             transition={{ duration: 0.6 }}
-            className="flex flex-col items-center justify-center space-y-1 group cursor-default transition-all duration-500 hover:scale-105"
+            className="flex flex-col items-center justify-center gap-0 group cursor-default transition-all duration-500 hover:scale-105"
           >
             <BlurText
               text="THỐNG KÊ CHI TIẾT"
@@ -215,7 +328,7 @@ const Home = () => {
               delay={150}
               animateBy="words"
               direction="bottom"
-              className="text-4xl md:text-7xl font-black text-white uppercase tracking-tighter drop-shadow-[0_0_15px_rgba(255,70,85,0.4)] group-hover:text-[#ff4655] group-hover:drop-shadow-[0_0_40px_rgba(255,70,85,0.8)]"
+              className="px-4 py-2 text-4xl md:text-7xl font-black leading-relaxed text-white uppercase tracking-tighter [text-shadow:0_0_40px_rgba(255,70,85,0.8)] group-hover:text-[#ff4655]"
             />
           </motion.div>
 
@@ -257,6 +370,39 @@ const Home = () => {
               Tìm kiếm
             </button>
           </form>
+          {recentSearches.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto mt-4 flex w-full max-w-2xl flex-wrap items-center justify-center gap-2 text-left"
+            >
+              <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                Truy vấn gần đây
+              </span>
+              {recentSearches.map((search) => (
+                <span
+                  key={search}
+                  className="inline-flex items-center gap-1 border border-[#ff4655]/25 bg-[#121e2d]/80 text-xs text-gray-200"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleRecentSearch(search)}
+                    className="px-3 py-2 font-mono hover:text-[#ff4655]"
+                  >
+                    {search}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Xóa ${search} khỏi lịch sử`}
+                    onClick={() => handleRemoveRecentSearch(search)}
+                    className="border-l border-white/10 px-2 py-2 text-gray-500 hover:text-[#ff4655]"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </motion.div>
+          )}
         </div>
       </section>
 
@@ -383,7 +529,7 @@ const Home = () => {
           >
             <div className="w-2 h-10 bg-[#ff4655]"></div>
             <h3 className="text-3xl font-bold uppercase tracking-widest text-white">
-              Tin Tức Khu Vực
+              Tín Hiệu Trực Tiếp
             </h3>
           </motion.div>
 
@@ -399,55 +545,157 @@ const Home = () => {
                 Youtube: VALORANT Vietnam
               </h4>
               <div className="relative aspect-video w-full rounded overflow-hidden border border-gray-700/50">
-                {videoUrl ? (
-                  <iframe
-                    className="absolute inset-0 w-full h-full"
-                    src={videoUrl}
-                    title="Video mới nhất từ VALORANT Vietnam"
-                    frameBorder="0"
-                    allowFullScreen
-                  ></iframe>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-gray-500">
-                    Đang tải video mới nhất...
-                  </div>
-                )}
+                <iframe
+                  className="absolute inset-0 h-full w-full"
+                  src={`https://www.youtube.com/embed/${latestVideoId}`}
+                  title="Video mới nhất từ VALORANT Vietnam"
+                  frameBorder="0"
+                  allowFullScreen
+                ></iframe>
               </div>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              whileHover={{ scale: 1.02 }}
-              viewport={{ once: false }}
-              transition={{ delay: 0.1 }}
-              className="w-full min-w-0 bg-[#1f2937]/30 border border-gray-800 p-4 md:p-6 rounded-sm relative overflow-hidden group hover:border-[#ff4655]/40 transition-colors"
-            >
-              <h4 className="text-gray-400 uppercase text-sm font-bold tracking-widest mb-4 group-hover:text-white">
-                Định vị Hệ thống
-              </h4>
-              <div className="w-full min-h-72 md:h-[85%] bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-opacity-20 border border-[#ff4655]/20 relative flex items-center justify-center bg-[#0a1017]">
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
-                  className="absolute w-64 h-64 border-t-2 border-[#ff4655]/50 rounded-full opacity-30"
-                />
-                <div className="absolute w-48 h-48 border border-[#ff4655]/30 rounded-full animate-ping opacity-20"></div>
-                <div className="absolute w-32 h-32 border border-[#ff4655]/40 rounded-full"></div>
-                <div className="relative z-10 flex flex-col items-center">
-                  <div className="w-4 h-4 bg-[#ff4655] rounded-full shadow-[0_0_15px_rgba(255,70,85,1)] animate-pulse"></div>
-                  <div className="mt-4 text-center">
-                    <p className="text-white font-bold tracking-widest text-lg">
-                      Vị trí: {city}
+            {seasonsRequest.isLoading ? (
+              <div className="hud-skeleton aspect-video border border-[#ff4655]/20" />
+            ) : seasonsRequest.error?.status === 429 ? (
+              <PublicDataEmptyState className="aspect-video">
+                Máy chủ Riot đang bận, tự động thử lại sau...
+              </PublicDataEmptyState>
+            ) : activeSeason ? (
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                whileHover={{ scale: 1.02 }}
+                viewport={{ once: false }}
+                transition={{ delay: 0.1 }}
+                className="w-full min-w-0 bg-[#1f2937]/30 border border-gray-800 p-4 md:p-6 rounded-sm relative overflow-hidden group hover:border-[#ff4655]/40 transition-colors"
+              >
+                <h4 className="text-gray-400 uppercase text-sm font-bold tracking-widest mb-4 group-hover:text-white">
+                  MÙA GIẢI HIỆN TẠI
+                </h4>
+                <div className="relative flex aspect-video flex-col justify-between overflow-hidden border border-[#ff4655]/20 bg-[linear-gradient(135deg,#182637,#0a1017)] p-5">
+                  <div className="relative z-10">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#00f5d4]">
+                      LIVE GAME STATE
                     </p>
-                    <p className="text-[#ff4655] text-xs font-mono mt-1">
-                      Server Valorant tối ưu: Hong Kong 1
+                    <div className="mt-3 border border-[#ff4655]/70 bg-[linear-gradient(110deg,rgba(255,70,85,0.24),rgba(10,16,23,0.9))] px-4 py-3 shadow-[0_0_22px_rgba(255,70,85,0.16)]">
+                      <h3 className="text-2xl font-black uppercase tracking-wide text-white [text-shadow:0_0_8px_#ff4655]">
+                        {activeSeason.title}
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="relative z-10 border-t border-white/10 pt-3">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
+                      Kết thúc sau
+                    </p>
+                    <p className="mt-1 text-xl font-black tracking-widest text-[#ff4655]">
+                      {seasonCountdown}
                     </p>
                   </div>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
+            ) : (
+              <PublicDataEmptyState className="aspect-video">
+                Không tìm thấy mùa giải đang hoạt động.
+              </PublicDataEmptyState>
+            )}
           </div>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden border-t border-gray-800/50 bg-[#0f1923] px-4 py-20">
+        <div className="relative z-10 mx-auto max-w-6xl">
+          <motion.div
+            initial={{ opacity: 0, x: -40 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            className="mb-10 flex items-center gap-4"
+          >
+            <div className="h-10 w-2 bg-[#ff4655]" />
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#ff4655]">
+                Meta intelligence / patch scan
+              </p>
+              <h3 className="text-3xl font-bold uppercase tracking-widest text-white">
+                Tiêu Điểm Đặc Vụ
+              </h3>
+            </div>
+          </motion.div>
+          {agentsRequest.error?.status === 429 ? (
+            <PublicDataEmptyState>
+              Máy chủ Riot đang bận, tự động thử lại sau...
+            </PublicDataEmptyState>
+          ) : agentsRequest.isLoading ? (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={index}
+                  className="hud-skeleton h-44 border border-white/10"
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {META_SPOTLIGHT.map((agent, index) => (
+                <motion.article
+                  key={agent.name}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  whileHover={{ y: -6, scale: 1.02 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: index * 0.08 }}
+                  className="group relative overflow-hidden border border-white/10 bg-[#111b26] p-4 shadow-[0_0_24px_rgba(255,70,85,0.06)]"
+                >
+                  <div className="absolute right-0 top-0 h-20 w-20 bg-[#ff4655]/10 blur-2xl transition group-hover:bg-[#ff4655]/25" />
+                  <div className="flex items-center gap-3">
+                    <div className="h-16 w-16 overflow-hidden border border-[#ff4655]/40 bg-[#0a1017]">
+                      {agentIcons[agent.name.toLowerCase()] || agent.image ? (
+                        <img
+                          src={
+                            agentIcons[agent.name.toLowerCase()] || agent.image
+                          }
+                          alt={agent.name}
+                          className="h-full w-full object-contain p-1 transition duration-500 group-hover:scale-110"
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gray-700/60 text-lg font-black text-gray-400">
+                          ?
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-black uppercase tracking-wider text-white">
+                        {agent.name}
+                      </h4>
+                      <p className="text-[10px] uppercase tracking-[0.2em] text-[#ff4655]">
+                        {agent.role}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-3 border-t border-white/10 pt-3">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-gray-500">
+                        Pick rate
+                      </p>
+                      <p className="font-bold text-white">{agent.pickRate}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-gray-500">
+                        Win rate
+                      </p>
+                      <p className="font-bold text-[#00f5d4]">
+                        {agent.winRate}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-[10px] font-mono uppercase tracking-widest text-gray-500">
+                    Signal:{" "}
+                    <span className="text-[#ffc857]">{agent.signal}</span>
+                  </p>
+                </motion.article>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

@@ -30,11 +30,6 @@ const MainLayout = () => {
     navigate("/login");
   };
 
-  const handleProfileClick = () => {
-    setIsMobileMenuOpen(false);
-    navigate("/my-profile");
-  };
-
   const handleLoginClick = () => {
     setIsMobileMenuOpen(false);
     navigate("/login");
@@ -101,7 +96,7 @@ const MainLayout = () => {
       <header className="h-18 sticky top-0 z-50 bg-[#0f1923]/90 backdrop-blur-sm border-b border-[#ff4655]/30">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
           {/* Cụm Logo */}
-          <Link to="/" className="flex items-center gap-3 group cursor-pointer">
+          <Link to="/" className="flex items-center gap-3 group cursor-pointer whitespace-nowrap">
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 24 24"
@@ -135,17 +130,31 @@ const MainLayout = () => {
             <Link
               to="/"
               onClick={() => setIsMobileMenuOpen(false)}
-              className="text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
+              className="whitespace-nowrap text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
             >
               Tra cứu
             </Link>
-            <button
-              type="button"
-              onClick={handleProfileClick}
-              className="text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
+            <Link
+              to="/my-profile"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="whitespace-nowrap text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
             >
               Hồ sơ
-            </button>
+            </Link>
+            <Link
+              to="/leaderboard"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="whitespace-nowrap text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
+            >
+              Xếp hạng
+            </Link>
+            <Link
+              to="/tools"
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="whitespace-nowrap text-gray-400 hover:text-white uppercase font-bold text-sm tracking-widest transition-colors"
+            >
+              Công cụ
+            </Link>
             {/* Nút ĐĂNG NHẬP / ĐĂNG XUẤT với hiệu ứng quét */}
             <button
               type="button"
@@ -182,17 +191,31 @@ const MainLayout = () => {
               <Link
                 to="/"
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
+                className="block whitespace-nowrap border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
               >
                 Tra cứu
               </Link>
-              <button
-                type="button"
-                onClick={handleProfileClick}
-                className="block w-full border-b border-white/10 py-3 text-left text-sm font-bold uppercase tracking-widest text-gray-300"
+              <Link
+                to="/my-profile"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block whitespace-nowrap border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
               >
                 Hồ sơ
-              </button>
+              </Link>
+              <Link
+                to="/leaderboard"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block whitespace-nowrap border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
+              >
+                Xếp hạng
+              </Link>
+              <Link
+                to="/tools"
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="block whitespace-nowrap border-b border-white/10 py-3 text-sm font-bold uppercase tracking-widest text-gray-300"
+              >
+                Công cụ
+              </Link>
               <button
                 type="button"
                 onClick={

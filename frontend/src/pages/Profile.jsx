@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
@@ -6,34 +6,339 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axiosClient from "../utils/axiosClient";
 import toast from "react-hot-toast";
 import { updateUser } from "../store/authSlice";
+import useFetchPublicData from "../hooks/useFetchPublicData";
 
-const MAP_BACKGROUNDS = {
-  Ascent:
-    "https://media.valorant-api.com/maps/7eaecc1b-4337-bbf6-6ab9-04b8f06b3319/splash.png",
-  Haven:
-    "https://media.valorant-api.com/maps/2bee0dc9-4ffe-519b-1cbd-7fbe763a6047/splash.png",
-  Split:
-    "https://media.valorant-api.com/maps/d960549e-485c-e861-8d71-aa9d1aed12a2/splash.png",
-  Bind: "https://media.valorant-api.com/maps/2c9d57ec-4431-9c5e-2939-8f9ef6dd5cba/splash.png",
-  Icebox:
-    "https://media.valorant-api.com/maps/e2ad5c54-4114-a870-9641-8ea21279579a/splash.png",
-  Breeze:
-    "https://media.valorant-api.com/maps/2fb9a4fd-47b8-4e7d-a969-74b4046ebd53/splash.png",
-  Fracture:
-    "https://media.valorant-api.com/maps/b529448b-4d60-346e-e89e-00a4c527a405/splash.png",
-  Abyss:
-    "https://media.valorant-api.com/maps/224b0a95-48b9-f703-1bd8-67aca101a61f/splash.png",
-  Lotus:
-    "https://media.valorant-api.com/maps/2fe4ed3a-450a-948b-6d6b-e89a78e680a9/splash.png",
-  Sunset:
-    "https://media.valorant-api.com/maps/92584fbe-486a-b1b2-9faa-39b0f486b498/splash.png",
-  Pearl:
-    "https://media.valorant-api.com/maps/fd267378-4d1d-484f-ff52-77821ed10dc2/splash.png",
-  Summit:
-    "https://media.valorant-api.com/maps/756da597-416b-c0f2-f47b-afbdf28670bc/splash.png",
-  Corrode:
-    "https://media.valorant-api.com/maps/1c18ab1f-420d-0d8b-71d0-77ad3c439115/splash.png",
-  Default: "",
+const MAPS_URL = "https://valorant-api.com/v1/maps";
+const DEFAULT_MAP_BACKGROUND = "/favicon.svg";
+
+const toSafeNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const EMPTY_MATCHES = [];
+
+const getComparableStats = (profileData) => {
+  const profileMatches = Array.isArray(profileData?.matches)
+    ? profileData.matches
+    : [];
+  const total = profileMatches.length;
+  const wins = profileMatches.filter((match) => match?.won).length;
+  const kills = profileMatches.reduce(
+    (sum, match) => sum + toSafeNumber(match?.stats?.kills),
+    0,
+  );
+  const deaths = profileMatches.reduce(
+    (sum, match) => sum + toSafeNumber(match?.stats?.deaths),
+    0,
+  );
+  const acs = total
+    ? profileMatches.reduce(
+        (sum, match) => sum + toSafeNumber(match?.stats?.score),
+        0,
+      ) / total
+    : 0;
+
+  return {
+    winRate: total ? (wins / total) * 100 : 0,
+    kd: deaths ? kills / deaths : kills,
+    acs,
+  };
+};
+
+const formatRiotId = (profileData, fallback = "Unknown#Player") => {
+  const profileName = profileData?.name || "";
+  const profileTag = profileData?.tag || "";
+  return profileName && profileTag ? `${profileName}#${profileTag}` : fallback;
+};
+
+const DonutMetric = ({ label, value, displayValue, color = "#ff4655" }) => {
+  const safeValue = Math.min(100, Math.max(0, toSafeNumber(value)));
+  const radius = 30;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (safeValue / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative h-24 w-24">
+        <svg viewBox="0 0 80 80" className="-rotate-90 h-full w-full">
+          <circle
+            cx="40"
+            cy="40"
+            r={radius}
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="7"
+          />
+          <circle
+            cx="40"
+            cy="40"
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth="7"
+            strokeLinecap="square"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className="transition-[stroke-dashoffset] duration-700"
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-lg font-black text-white">
+          {displayValue}
+        </span>
+      </div>
+      <span className="text-center text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+        {label}
+      </span>
+    </div>
+  );
+};
+
+const StatProgress = ({ label, value, max = 100, displayValue, color }) => {
+  const percentage = Math.min(
+    100,
+    Math.max(0, (toSafeNumber(value) / max) * 100),
+  );
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs uppercase tracking-widest">
+        <span className="text-gray-400">{label}</span>
+        <span className="font-bold text-white">{displayValue}</span>
+      </div>
+      <div className="h-2 overflow-hidden bg-white/10">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${percentage}%` }}
+          transition={{ duration: 0.8, ease: "easeOut" }}
+          className="h-full"
+          style={{ backgroundColor: color }}
+        />
+      </div>
+    </div>
+  );
+};
+
+const BadgeCard = ({ title, description, icon, tone }) => (
+  <div className="badge-card h-32">
+    <div className="badge-card-inner relative h-full w-full">
+      <div
+        className="badge-face badge-front absolute inset-0 flex flex-col items-center justify-center gap-2 border p-3 text-center"
+        style={{ borderColor: tone, boxShadow: `0 0 18px ${tone}33` }}
+      >
+        <span className="text-2xl" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="text-xs font-black uppercase tracking-widest text-white">
+          {title}
+        </span>
+        <span
+          className="text-[9px] uppercase tracking-widest"
+          style={{ color: tone }}
+        >
+          Thành tựu đã mở khóa
+        </span>
+      </div>
+      <div
+        className="badge-face badge-back absolute inset-0 flex items-center justify-center border p-4 text-center text-xs text-gray-300"
+        style={{ borderColor: tone, background: `${tone}12` }}
+      >
+        {description}
+      </div>
+    </div>
+  </div>
+);
+
+const MatchDetails = ({
+  match,
+  kills,
+  deaths,
+  assists,
+  headshots,
+  score,
+  playerName,
+}) => {
+  const rounds = Array.isArray(match?.rounds)
+    ? match.rounds
+    : Array.isArray(match?.timeline)
+      ? match.timeline
+      : [];
+  const findRoundPlayer = (round) => {
+    if (!Array.isArray(round?.player_stats)) return round?.player_stats;
+    return (
+      round.player_stats.find(
+        (player) =>
+          Boolean(playerName) &&
+          (player?.player_display_name === playerName ||
+            player?.player_display_name?.toLowerCase() ===
+              playerName.toLowerCase()),
+      ) ||
+      round.player_stats.find((player) => {
+        const candidateName = player?.name ?? player?.player_name;
+        return candidateName?.toLowerCase() === playerName?.toLowerCase();
+      })
+    );
+  };
+  const chartData = rounds.map((round) => {
+    const myStats = findRoundPlayer(round);
+    const totalDamage =
+      myStats?.damage_events?.reduce(
+        (sum, event) => sum + toSafeNumber(event?.damage),
+        0,
+      ) || 0;
+    const spent = myStats?.economy?.spent || 0;
+    return { damage: totalDamage, economy: toSafeNumber(spent) };
+  });
+  const damageValues = chartData.map((data) => data.damage);
+  const economyValues = chartData.map((data) => data.economy);
+  const chartWidth = 320;
+  const chartHeight = 100;
+  const maxDamage = Math.max(...damageValues, 1);
+  const chartPoints = damageValues
+    .map((damage, index) => {
+      const x =
+        damageValues.length === 1
+          ? chartWidth / 2
+          : (index / (damageValues.length - 1)) * chartWidth;
+      const y = chartHeight - (damage / maxDamage) * (chartHeight - 12) - 6;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="space-y-5 border border-gray-800 bg-linear-to-r from-[#07101b]/60 to-[#071827]/30 p-4">
+      <div className="grid grid-cols-3 gap-3 text-sm text-gray-300">
+        {[
+          ["Kills", kills],
+          ["Deaths", deaths],
+          ["Assists", assists],
+          [
+            "K/D",
+            (() => {
+              if (!deaths) return kills ? "∞" : "0.00";
+              return (kills / deaths).toFixed(2);
+            })(),
+          ],
+          ["Headshots", headshots],
+          ["Score", score],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <p className="text-xs uppercase text-gray-500">{label}</p>
+            <p className="font-semibold text-white">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-widest text-gray-300">
+            Round timeline
+          </h4>
+          <span className="text-[10px] uppercase tracking-widest text-gray-600">
+            {rounds.length ? `${rounds.length} rounds` : "No round feed"}
+          </span>
+        </div>
+        {rounds.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {rounds.map((round, index) => {
+              const won =
+                round?.won !== undefined
+                  ? Boolean(round.won)
+                  : round?.win !== undefined
+                    ? Boolean(round.win)
+                    : round?.winning_team
+                      ? round.winning_team === match?.team
+                      : round?.result === "win";
+              return (
+                <span
+                  key={round?.id || round?.round || index}
+                  title={`Round ${round?.round || index + 1}: ${won ? "Thắng" : "Thua"}`}
+                  className={`h-5 w-5 text-center text-[9px] leading-5 font-bold text-[#07101b] ${won ? "bg-[#00f5d4]" : "bg-[#ff4655]"}`}
+                >
+                  {index + 1}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-600">
+            Dữ liệu không khả dụng cho chế độ chơi này
+          </p>
+        )}
+      </div>
+
+      <div>
+        <div className="mb-2 flex items-center justify-between">
+          <h4 className="text-xs font-bold uppercase tracking-widest text-gray-300">
+            Damage / round
+          </h4>
+          <span className="text-[10px] uppercase tracking-widest text-gray-600">
+            LINE TELEMETRY
+          </span>
+        </div>
+        {rounds.length ? (
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            className="h-28 w-full overflow-visible"
+          >
+            <line
+              x1="0"
+              y1={chartHeight - 1}
+              x2={chartWidth}
+              y2={chartHeight - 1}
+              stroke="rgba(255,255,255,0.12)"
+            />
+            <polyline
+              points={chartPoints}
+              fill="none"
+              stroke="#ff4655"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+            {damageValues.map((damage, index) => {
+              const [x, y] = chartPoints.split(" ")[index].split(",");
+              return (
+                <circle key={index} cx={x} cy={y} r="2.5" fill="#00f5d4" />
+              );
+            })}
+          </svg>
+        ) : (
+          <p className="text-xs text-gray-600">
+            Dữ liệu không khả dụng cho chế độ chơi này
+          </p>
+        )}
+      </div>
+
+      <div>
+        <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-300">
+          Weapon economy
+        </h4>
+        {rounds.length ? (
+          <div className="flex h-28 items-end gap-1 border-b border-white/10 px-2">
+            {economyValues.map((value, index) => {
+              const maxEconomy = Math.max(...economyValues, 1);
+              return (
+                <div
+                  key={index}
+                  className="group flex h-full flex-1 items-end justify-center"
+                >
+                  <div
+                    className="w-full max-w-5 bg-[#00f5d4]/70 transition-all group-hover:bg-[#00f5d4]"
+                    style={{
+                      height: `${Math.max(4, (value / maxEconomy) * 100)}%`,
+                    }}
+                    title={`Round ${index + 1}: ${value}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-600">
+            Dữ liệu không khả dụng cho chế độ chơi này
+          </p>
+        )}
+      </div>
+    </div>
+  );
 };
 
 const Profile = () => {
@@ -49,13 +354,23 @@ const Profile = () => {
   // Modal & form state for linking Riot ID when viewing /my-profile
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkRiotId, setLinkRiotId] = useState("");
+  const [compareInput, setCompareInput] = useState("");
+  const [compareRiotId, setCompareRiotId] = useState("");
+  const [compareOpen, setCompareOpen] = useState(false);
 
-  useEffect(() => {
-    if (name && tag) {
-      setSearchId(`${name}#${tag}`);
-    }
-  }, [name, tag]);
   const [openMatchId, setOpenMatchId] = useState(null);
+  const mapsRequest = useFetchPublicData(MAPS_URL);
+  const mapIcons = useMemo(() => {
+    const maps = Array.isArray(mapsRequest.data?.data)
+      ? mapsRequest.data.data
+      : [];
+    return maps.reduce((icons, map) => {
+      if (map?.displayName && map?.listViewIcon) {
+        icons[map.displayName.toLowerCase()] = map.listViewIcon;
+      }
+      return icons;
+    }, {});
+  }, [mapsRequest.data]);
 
   const toggleMatch = (id) => {
     setOpenMatchId((prev) => (prev === id ? null : id));
@@ -82,15 +397,8 @@ const Profile = () => {
     match?.assets?.agent?.small ?? match?.assets?.agent?.bust ?? "";
 
   const getMapBackground = (match) => {
-    const mapName = match?.map ?? match?.metadata?.map;
-    return MAP_BACKGROUNDS[mapName] ?? MAP_BACKGROUNDS.Default;
-  };
-
-  const getKdRatio = (match) => {
-    const kills = match?.stats?.kills ?? 0;
-    const deaths = match?.stats?.deaths ?? 0;
-    if (!deaths) return kills ? "∞" : "0.00";
-    return (kills / deaths).toFixed(2);
+    const mapName = match?.mapName ?? match?.map ?? match?.metadata?.map ?? "";
+    return mapIcons[mapName.toLowerCase()] ?? DEFAULT_MAP_BACKGROUND;
   };
 
   const handleSearch = (e) => {
@@ -103,6 +411,57 @@ const Profile = () => {
     const [n, t] = val.split("#").map((part) => part.trim());
     if (!n || !t) return;
     navigate(`/profile/${encodeURIComponent(n)}/${encodeURIComponent(t)}`);
+  };
+
+  const handleCompare = (e) => {
+    e.preventDefault();
+    const value = compareInput.trim();
+    const [compareName = "", compareTag = ""] = value
+      .split("#")
+      .map((part) => part.trim());
+
+    if (!compareName || !compareTag) {
+      toast.error("Nhập Riot ID thứ hai theo định dạng Tên#Tag.");
+      return;
+    }
+
+    if (value.toLowerCase() === `${targetName}#${targetTag}`.toLowerCase()) {
+      toast.error("Hãy chọn một Riot ID khác để so sánh.");
+      return;
+    }
+
+    setCompareRiotId(`${compareName}#${compareTag}`);
+    setCompareOpen(true);
+  };
+
+  const handleShare = async () => {
+    const shareUrl = `https://vnminh.id.vn/profile/${encodeURIComponent(
+      profile?.name || targetName,
+    )}/${encodeURIComponent(profile?.tag || targetTag)}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = shareUrl;
+        textArea.setAttribute("readonly", "");
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        textArea.remove();
+      }
+      toast.success("Đã sao chép liên kết hồ sơ.", {
+        style: {
+          background: "#111b26",
+          color: "#00f5d4",
+          border: "1px solid rgba(0,245,212,0.45)",
+        },
+      });
+    } catch {
+      toast.error("Không thể sao chép liên kết. Hãy thử lại.");
+    }
   };
 
   const handleOpenLinkModal = () => {
@@ -152,23 +511,70 @@ const Profile = () => {
     retry: 1,
   });
 
+  const {
+    data: comparePlayerData,
+    isLoading: isCompareLoading,
+    isError: isCompareError,
+  } = useQuery({
+    queryKey: ["compareProfile", compareRiotId],
+    queryFn: async () => {
+      const [compareName, compareTag] = compareRiotId
+        .split("#")
+        .map((part) => part.trim());
+      return axiosClient.get(
+        `/profile/${encodeURIComponent(compareName)}/${encodeURIComponent(compareTag)}`,
+      );
+    },
+    enabled: compareOpen && Boolean(compareRiotId),
+    retry: 1,
+  });
+
   const profile = playerData?.data;
-  const matches = profile?.matches ?? [];
-  const { totalMatches, winRate, avgKd, headshotRate } = useMemo(() => {
+  const matches = Array.isArray(profile?.matches)
+    ? profile.matches
+    : EMPTY_MATCHES;
+  const {
+    totalMatches,
+    winRate,
+    winRateValue,
+    avgKd,
+    avgKdValue,
+    headshotRate,
+    headshotValue,
+    avgAcs,
+    shotDistribution,
+    topAgents,
+    badges,
+  } = useMemo(() => {
     const total = matches.length;
     const wins = matches.filter((match) => match.won).length;
-    const averageKd = total
-      ? (
-          matches.reduce(
-            (acc, match) => acc + (parseFloat(match.stats?.kdRatio) || 0),
-            0,
-          ) / total
-        ).toFixed(2)
-      : "0.00";
+    const averageKdValue = total
+      ? matches.reduce((acc, match) => {
+          const stats = match?.stats ?? {};
+          const deaths = toSafeNumber(stats.deaths);
+          return (
+            acc +
+            (deaths
+              ? toSafeNumber(stats.kills) / deaths
+              : toSafeNumber(stats.kills))
+          );
+        }, 0) / total
+      : 0;
+    const averageAcs = total
+      ? matches.reduce(
+          (acc, match) => acc + toSafeNumber(match?.stats?.score),
+          0,
+        ) / total
+      : 0;
+    const averageAssists = total
+      ? matches.reduce(
+          (acc, match) => acc + toSafeNumber(match?.stats?.assists),
+          0,
+        ) / total
+      : 0;
 
     const headshotValue =
-      profile?.headshot_rate ??
-      profile?.headshot ??
+      toSafeNumber(profile?.headshot_rate ?? profile?.headshot, NaN) ||
       (() => {
         const totals = matches.reduce(
           (acc, item) => {
@@ -183,18 +589,100 @@ const Profile = () => {
           { headshots: 0, shots: 0 },
         );
 
-        return totals.shots
-          ? Math.round((totals.headshots / totals.shots) * 100)
-          : null;
+        return totals.shots ? (totals.headshots / totals.shots) * 100 : 0;
       })();
+
+    const shots = matches.reduce(
+      (acc, match) => {
+        acc.head += toSafeNumber(match?.stats?.headshots);
+        acc.body += toSafeNumber(match?.stats?.bodyshots);
+        acc.legs += toSafeNumber(match?.stats?.legshots);
+        return acc;
+      },
+      { head: 0, body: 0, legs: 0 },
+    );
+    const agentMap = matches.reduce((acc, match) => {
+      const agent = match?.agent?.trim() || "Unknown";
+      const current = acc.get(agent) || {
+        agent,
+        matches: 0,
+        wins: 0,
+        kills: 0,
+        deaths: 0,
+        avatar: "",
+      };
+      current.matches += 1;
+      current.wins += match?.won ? 1 : 0;
+      current.kills += toSafeNumber(match?.stats?.kills);
+      current.deaths += toSafeNumber(match?.stats?.deaths);
+      current.avatar ||=
+        match?.assets?.agent?.small ?? match?.assets?.agent?.bust ?? "";
+      acc.set(agent, current);
+      return acc;
+    }, new Map());
 
     return {
       totalMatches: total,
+      winRateValue: total ? (wins / total) * 100 : 0,
       winRate: total ? `${Math.round((wins / total) * 100)}%` : "N/A",
-      avgKd: averageKd,
-      headshotRate: headshotValue,
+      avgKdValue: averageKdValue,
+      avgKd: averageKdValue.toFixed(2),
+      headshotValue,
+      headshotRate: total ? Math.round(headshotValue) : null,
+      avgAcs: Math.round(averageAcs),
+      averageAssists,
+      badges: [
+        headshotValue > 30 && {
+          title: "Máy dập Headshot",
+          description: `Tỷ lệ headshot trung bình ${Math.round(headshotValue)}%, vượt mốc 30%.`,
+          icon: "🎯",
+          tone: "#ffc857",
+        },
+        averageAssists > 10 && {
+          title: "Ông hoàng hỗ trợ",
+          description: `Trung bình ${averageAssists.toFixed(1)} assists mỗi trận.`,
+          icon: "◈",
+          tone: "#c0c0c0",
+        },
+        averageAcs > 250 && {
+          title: "Chiến thần",
+          description: `ACS trung bình ${Math.round(averageAcs)}, vượt mốc 250.`,
+          icon: "✦",
+          tone: "#b87333",
+        },
+      ].filter(Boolean),
+      shotDistribution: shots,
+      topAgents: [...agentMap.values()]
+        .sort((a, b) => b.matches - a.matches || b.kills - a.kills)
+        .slice(0, 3)
+        .map((agent) => ({
+          ...agent,
+          kd: agent.deaths ? (agent.kills / agent.deaths).toFixed(2) : "∞",
+          winRate: agent.matches
+            ? Math.round((agent.wins / agent.matches) * 100)
+            : 0,
+        })),
     };
-  }, [matches, profile?.headshot, profile?.headshot_rate]);
+  }, [matches, profile]);
+
+  const compareProfile = comparePlayerData?.data;
+  const currentComparableStats = useMemo(
+    () => getComparableStats(profile),
+    [profile],
+  );
+  const compareStats = useMemo(
+    () => getComparableStats(compareProfile),
+    [compareProfile],
+  );
+  const compareRows = [
+    { label: "K/D", key: "kd", format: (value) => value.toFixed(2) },
+    {
+      label: "Win Rate",
+      key: "winRate",
+      format: (value) => `${Math.round(value)}%`,
+    },
+    { label: "ACS", key: "acs", format: (value) => `${Math.round(value)}` },
+  ];
 
   // Fallback helpers and derived values used by JSX (safe defaults)
   const avatar =
@@ -282,21 +770,19 @@ const Profile = () => {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-[75vh] items-center justify-center w-full px-4">
-        <div className="w-full max-w-sm rounded-xl border border-[#2d3748] bg-[#1a2733] p-6 shadow-[0_0_30px_rgba(255,70,85,0.14)]">
-          <p className="text-sm uppercase tracking-widest text-white text-center mb-4">
-            ĐANG NHẬN DỮ LIỆU...
-          </p>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-            <motion.div
-              animate={{ x: ["-100%", "100%"] }}
-              transition={{
-                duration: 1.6,
-                repeat: Infinity,
-                ease: "easeInOut",
-              }}
-              className="h-full w-1/2 rounded-full bg-[#ff4655]"
-            />
+      <div className="tactical-page flex min-h-[75vh] items-center justify-center w-full px-4">
+        <div className="hud-panel w-full max-w-sm rounded-xl border border-[#2d3748] bg-[#1a2733] p-6 shadow-[0_0_30px_rgba(255,70,85,0.14)]">
+          <div className="mb-5 flex items-center justify-between">
+            <span className="text-xs uppercase tracking-[0.28em] text-[#ff4655]">
+              K-SIGHT / SCAN
+            </span>
+            <span className="hud-status-dot" aria-hidden="true" />
+          </div>
+          <div className="space-y-3">
+            <div className="hud-skeleton h-5 w-3/4" />
+            <div className="hud-skeleton h-3 w-full" />
+            <div className="hud-skeleton h-3 w-5/6" />
+            <div className="hud-skeleton mt-5 h-12 w-full" />
           </div>
         </div>
       </div>
@@ -490,7 +976,7 @@ const Profile = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="tactical-page container mx-auto px-4 py-8 max-w-6xl">
       {isAuthenticated && (
         <section className="mb-8 w-full rounded-3xl border border-[#ff4655]/20 bg-[#111b26]/90 p-6 shadow-[0_0_40px_rgba(255,70,85,0.08)] md:p-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -602,7 +1088,8 @@ const Profile = () => {
               Tra cứu Riot ID khác
             </label>
             <input
-              value={searchId}
+              key={`${name || "profile"}-${tag || "search"}`}
+              defaultValue={name && tag ? `${name}#${tag}` : ""}
               onChange={(e) => setSearchId(e.target.value)}
               placeholder="Ví dụ: TenZ#VN1"
               className="w-full bg-[#0d151f] border border-gray-700/60 text-white placeholder:text-gray-500 text-lg px-5 py-4 rounded-xl focus:outline-none focus:border-[#ff4655] focus:ring-2 focus:ring-[#ff4655]/10 transition"
@@ -617,6 +1104,127 @@ const Profile = () => {
           </button>
         </div>
       </motion.form>
+
+      <motion.section
+        variants={itemVariants}
+        initial="hidden"
+        animate="show"
+        className="mb-8 border border-[#00f5d4]/20 bg-[#111b26]/85 p-5 shadow-[0_0_30px_rgba(0,245,212,0.06)] sm:p-6"
+      >
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#00f5d4]">
+              Tactical comparison
+            </p>
+            <h3 className="mt-1 text-lg font-bold uppercase tracking-widest text-white">
+              Đối đầu chỉ số
+            </h3>
+          </div>
+          {compareOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setCompareOpen(false);
+                setCompareRiotId("");
+              }}
+              className="text-xs uppercase tracking-widest text-gray-500 hover:text-[#ff4655]"
+            >
+              Đóng so sánh
+            </button>
+          )}
+        </div>
+        <form
+          onSubmit={handleCompare}
+          className="flex flex-col gap-3 sm:flex-row"
+        >
+          <input
+            value={compareInput}
+            onChange={(e) => setCompareInput(e.target.value)}
+            placeholder="Nhập Riot ID thứ 2: TenZ#VN1"
+            className="min-w-0 flex-1 border border-gray-700/60 bg-[#0d151f] px-4 py-3 text-white placeholder:text-gray-600 outline-none transition focus:border-[#00f5d4]"
+          />
+          <button
+            type="submit"
+            className="border border-[#00f5d4]/50 bg-[#00f5d4]/10 px-6 py-3 text-xs font-bold uppercase tracking-widest text-[#00f5d4] transition hover:bg-[#00f5d4]/20"
+          >
+            So sánh
+          </button>
+        </form>
+
+        {compareOpen && (
+          <div className="mt-6">
+            {isCompareLoading && (
+              <div
+                className="hud-skeleton h-28 w-full"
+                aria-label="Đang tải dữ liệu so sánh"
+              />
+            )}
+            {isCompareError && !isCompareLoading && (
+              <p className="border border-[#ff4655]/30 bg-[#ff4655]/5 p-4 text-sm text-[#ff8b94]">
+                Không thể tải Riot ID này. Hãy kiểm tra lại tên và tag.
+              </p>
+            )}
+            {compareProfile && !isCompareLoading && (
+              <div className="overflow-hidden border border-white/10">
+                <div className="grid grid-cols-2 bg-[#0d151f] text-center">
+                  {[profile, compareProfile].map((player, index) => (
+                    <div
+                      key={`${formatRiotId(player)}-${index}`}
+                      className={`p-4 ${index === 0 ? "border-r border-white/10" : ""}`}
+                    >
+                      <p className="truncate text-sm font-bold uppercase text-white">
+                        {formatRiotId(
+                          player,
+                          index === 0
+                            ? `${targetName}#${targetTag}`
+                            : compareRiotId,
+                        )}
+                      </p>
+                      <p className="mt-1 text-[10px] uppercase tracking-widest text-gray-500">
+                        {index === 0 ? "Current profile" : "Opponent"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-white/10">
+                  {compareRows.map((row) => {
+                    const currentValue = toSafeNumber(
+                      currentComparableStats[row.key],
+                    );
+                    const opponentValue = toSafeNumber(compareStats[row.key]);
+                    const currentWins = currentValue > opponentValue;
+                    const opponentWins = opponentValue > currentValue;
+                    return (
+                      <div
+                        key={row.key}
+                        className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-4 text-center"
+                      >
+                        <span
+                          className={`text-lg font-black ${currentWins ? "text-[#00f5d4]" : "text-white"}`}
+                        >
+                          {row.format(currentValue)}
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">
+                          {row.label}
+                        </span>
+                        <span
+                          className={`text-lg font-black ${opponentWins ? "text-[#ff4655]" : "text-white"}`}
+                        >
+                          {row.format(opponentValue)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="border-t border-white/10 px-4 py-3 text-center text-[10px] uppercase tracking-widest text-gray-600">
+                  Xanh: chỉ số cao hơn của hồ sơ hiện tại · Đỏ: chỉ số cao hơn
+                  của đối thủ
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </motion.section>
 
       <motion.div
         variants={containerVariants}
@@ -652,6 +1260,13 @@ const Profile = () => {
               <div className="px-4 py-1 bg-white/10 border border-white/20 rounded-full text-xs font-mono tracking-widest text-gray-300">
                 LEVEL {profile?.account_level ?? "N/A"}
               </div>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="mt-4 border border-[#00f5d4]/40 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-[#00f5d4] transition hover:bg-[#00f5d4]/10"
+              >
+                Chia sẻ hồ sơ
+              </button>
             </div>
           </motion.div>
 
@@ -679,28 +1294,198 @@ const Profile = () => {
         <div className="lg:col-span-2 space-y-6">
           <motion.div
             variants={itemVariants}
-            className="grid grid-cols-3 gap-4"
+            className="bg-[#1a2733] border border-gray-700/50 p-5 sm:p-6 rounded-3xl"
           >
-            <div className="bg-[#1a2733] border border-gray-700/50 p-4 text-center hover:bg-[#1f2937] transition rounded-3xl">
-              <p className="text-gray-500 uppercase text-xs font-bold tracking-widest mb-1">
-                Tỉ lệ thắng
-              </p>
-              <p className="text-2xl font-black text-white">{winRate}</p>
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-white font-bold uppercase tracking-widest text-lg">
+                  Combat telemetry
+                </h3>
+                <p className="mt-1 text-xs uppercase tracking-widest text-gray-500">
+                  Phân tích {totalMatches} trận gần nhất
+                </p>
+              </div>
+              <span className="text-xs font-mono text-[#00f5d4]">SYNCED</span>
             </div>
-            <div className="bg-[#1a2733] border border-gray-700/50 p-4 text-center hover:bg-[#1f2937] transition rounded-3xl">
-              <p className="text-gray-500 uppercase text-xs font-bold tracking-widest mb-1">
-                K/D trung bình
-              </p>
-              <p className="text-2xl font-black text-white">{avgKd}</p>
+            <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+              <DonutMetric
+                label="Win rate"
+                value={winRateValue}
+                displayValue={winRate}
+                color="#00f5d4"
+              />
+              <DonutMetric
+                label="Headshot"
+                value={headshotValue}
+                displayValue={`${headshotRate ?? 0}%`}
+                color="#ff4655"
+              />
+              <div className="flex flex-col justify-center">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                  K/D ratio
+                </p>
+                <p className="mt-1 text-3xl font-black text-white">{avgKd}</p>
+                <StatProgress
+                  label="efficiency"
+                  value={Math.min(avgKdValue, 3)}
+                  max={3}
+                  displayValue={`${avgKd} / 3.00`}
+                  color="#ff4655"
+                />
+              </div>
+              <div className="flex flex-col justify-center">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                  Average ACS
+                </p>
+                <p className="mt-1 text-3xl font-black text-white">{avgAcs}</p>
+                <StatProgress
+                  label="combat score"
+                  value={avgAcs}
+                  max={350}
+                  displayValue={`${avgAcs} / 350`}
+                  color="#ffc857"
+                />
+              </div>
             </div>
-            <div className="bg-[#1a2733] border border-gray-700/50 p-4 text-center hover:bg-[#1f2937] transition rounded-3xl">
-              <p className="text-gray-500 uppercase text-xs font-bold tracking-widest mb-1">
-                Tỉ lệ Headshot
-              </p>
-              <p className="text-2xl font-black text-white">
-                {headshotRate != null ? `${headshotRate}%` : "0%"}
-              </p>
+            <div className="mt-7 border-t border-white/10 pt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-gray-300">
+                  Body shot distribution
+                </h4>
+                <span className="text-[10px] font-mono text-gray-500">
+                  {shotDistribution.head +
+                    shotDistribution.body +
+                    shotDistribution.legs}{" "}
+                  shots
+                </span>
+              </div>
+              <div className="flex h-3 overflow-hidden bg-white/10">
+                {[
+                  ["Đầu", shotDistribution.head, "#ff4655"],
+                  ["Thân", shotDistribution.body, "#ffc857"],
+                  ["Chân", shotDistribution.legs, "#00a8cc"],
+                ].map(([label, amount, color]) => {
+                  const totalShots =
+                    shotDistribution.head +
+                    shotDistribution.body +
+                    shotDistribution.legs;
+                  return (
+                    <div
+                      key={label}
+                      title={`${label}: ${amount}`}
+                      className="h-full transition-all duration-700"
+                      style={{
+                        width: `${totalShots ? (amount / totalShots) * 100 : 0}%`,
+                        backgroundColor: color,
+                      }}
+                    />
+                  );
+                })}
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-widest text-gray-400">
+                {[
+                  ["Đầu", shotDistribution.head, "#ff4655"],
+                  ["Thân", shotDistribution.body, "#ffc857"],
+                  ["Chân", shotDistribution.legs, "#00a8cc"],
+                ].map(([label, amount, color]) => (
+                  <span key={label} className="flex items-center gap-2">
+                    <i className="h-2 w-2" style={{ backgroundColor: color }} />
+                    {label} {amount}
+                  </span>
+                ))}
+              </div>
             </div>
+          </motion.div>
+
+          <motion.div
+            variants={itemVariants}
+            className="bg-[#1a2733] border border-gray-700/50 p-5 sm:p-6 rounded-3xl"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="text-white font-bold uppercase tracking-widest text-lg">
+                  Huy hiệu thành tựu
+                </h3>
+                <p className="mt-1 text-xs uppercase tracking-widest text-gray-500">
+                  Performance awards
+                </p>
+              </div>
+              <span className="text-xs font-mono text-[#ffc857]">
+                {badges.length} UNLOCKED
+              </span>
+            </div>
+            {badges.length ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {badges.map((badge) => (
+                  <BadgeCard key={badge.title} {...badge} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">
+                Tiếp tục thi đấu để mở khóa huy hiệu đầu tiên.
+              </p>
+            )}
+          </motion.div>
+
+          <motion.div
+            variants={itemVariants}
+            className="bg-[#1a2733] border border-gray-700/50 p-5 sm:p-6 rounded-3xl"
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-white font-bold uppercase tracking-widest text-lg">
+                Đặc vụ thuần thục nhất
+              </h3>
+              <span className="text-xs uppercase tracking-widest text-gray-500">
+                Top agents
+              </span>
+            </div>
+            {topAgents.length ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {topAgents.map((agent, index) => (
+                  <div
+                    key={agent.agent}
+                    className="relative overflow-hidden border border-white/10 bg-[#0d151f] p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 overflow-hidden border border-[#ff4655]/40 bg-black/30">
+                        {agent.avatar ? (
+                          <img
+                            src={agent.avatar}
+                            alt={agent.agent}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-lg font-black text-[#ff4655]">
+                            {agent.agent.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold uppercase text-white">
+                          {agent.agent}
+                        </p>
+                        <p className="text-[10px] uppercase tracking-widest text-[#00f5d4]">
+                          #{index + 1} specialist
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <span className="text-gray-400">
+                        K/D <b className="text-white">{agent.kd}</b>
+                      </span>
+                      <span className="text-gray-400">
+                        WR <b className="text-white">{agent.winRate}%</b>
+                      </span>
+                      <span className="text-gray-400">
+                        GP <b className="text-white">{agent.matches}</b>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Chưa có dữ liệu đặc vụ.</p>
+            )}
           </motion.div>
 
           <motion.div
@@ -723,34 +1508,44 @@ const Profile = () => {
 
             <div className="space-y-3">
               {matches.length > 0 ? (
-                matches.map((match) => {
+                matches.map((match = {}, matchIndex) => {
+                  const matchId = match.matchId || `match-${matchIndex}`;
+                  const isExpanded = openMatchId === matchId;
                   const stats = match.stats ?? {};
                   const kills = stats.kills ?? 0;
                   const deaths = stats.deaths ?? 0;
                   const assists = stats.assists ?? 0;
                   const headshots = stats.headshots ?? 0;
                   const score = stats.score ?? 0;
+                  const isMvp =
+                    score > 0 &&
+                    score >=
+                      Math.max(
+                        ...matches.map((item) =>
+                          toSafeNumber(item?.stats?.score),
+                        ),
+                      );
 
                   return (
                     <motion.div
-                      key={match.matchId}
+                      key={match.matchId || `match-${matchIndex}`}
                       layout
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="relative overflow-hidden rounded-3xl border border-gray-800 bg-[#0b1018]/90 shadow-[0_0_20px_rgba(0,0,0,0.15)] transition-all duration-300 group hover:border-[#ff4655]/50 hover:shadow-[0_0_30px_rgba(255,69,85,0.35)]"
                     >
                       <div
-                        className="absolute inset-0 bg-cover bg-center opacity-80"
+                        className="relative h-40 bg-cover bg-center sm:h-36"
                         style={{
                           backgroundImage: `url(${getMapBackground(match)})`,
                         }}
-                      />
-                      <div className="absolute inset-0 bg-linear-to-t from-[#020608]/95 via-[#07101b]/70 to-transparent" />
-
-                      <div className="relative z-10 p-4 sm:p-5">
+                      >
+                        <div className="absolute inset-0 bg-linear-to-t from-[#020608]/95 via-[#07101b]/70 to-transparent" />
                         <button
-                          onClick={() => toggleMatch(match.matchId)}
-                          className="w-full text-left"
+                          onClick={() =>
+                            toggleMatch(matchId)
+                          }
+                          className="relative z-10 h-full w-full p-4 text-left sm:p-5"
                         >
                           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex items-center gap-3">
@@ -763,12 +1558,22 @@ const Profile = () => {
                               </div>
                               <div>
                                 <p className="text-xs uppercase tracking-[0.32em] text-green-400 mb-1">
-                                  {match.metadata.map || "Unknown"} • {""}
+                                  {match?.metadata?.map ||
+                                    match?.map ||
+                                    "Unknown"}{" "}
+                                  • {""}
                                   {match.gameMode || "Unknown"}
                                 </p>
-                                <h4 className="text-white font-bold text-lg">
-                                  {match.agent || "Agent chưa có"}
-                                </h4>
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-white font-bold text-lg">
+                                    {match.agent || "Agent chưa có"}
+                                  </h4>
+                                  {isMvp && (
+                                    <span className="border border-[#ffc857]/40 bg-[#ffc857]/10 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-[#ffc857]">
+                                      MVP
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="mt-2 flex flex-wrap gap-2">
                                   <span className="text-xs px-2 py-1 rounded-full border border-white/10 bg-white/5 text-white/80">
                                     K: {kills}
@@ -789,73 +1594,28 @@ const Profile = () => {
                             </span>
                           </div>
                         </button>
+                      </div>
 
-                        <AnimatePresence>
-                          {openMatchId === match.matchId && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.28 }}
-                              className="overflow-hidden mt-4"
-                            >
-                              <div className="p-3 rounded-md bg-linear-to-r from-[#07101b]/60 to-[#071827]/30 border border-gray-800">
-                                <div className="grid grid-cols-3 gap-3 text-sm text-gray-300">
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      Kills
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {kills}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      Deaths
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {deaths}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      Assists
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {assists}
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="mt-3 grid grid-cols-3 gap-3 text-sm text-gray-300">
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      K/D
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {getKdRatio(match)}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      Headshots
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {headshots}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs text-gray-500 uppercase">
-                                      Score
-                                    </p>
-                                    <p className="text-white font-semibold">
-                                      {score}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
+                      <div
+                        className={`grid transition-all duration-300 ease-in-out ${
+                          isExpanded
+                            ? "grid-rows-[1fr] opacity-100"
+                            : "grid-rows-[0fr] opacity-0"
+                        }`}
+                      >
+                        <div className="overflow-hidden bg-[#0f1923]">
+                          <div className="p-4 sm:p-5">
+                            <MatchDetails
+                              match={match}
+                              kills={kills}
+                              deaths={deaths}
+                              assists={assists}
+                              headshots={headshots}
+                              score={score}
+                              playerName={profile?.name || targetName}
+                            />
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
                   );

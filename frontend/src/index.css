@@ -1,5 +1,154 @@
 @import "tailwindcss";
 
+:root {
+  color-scheme: dark;
+  --tactical-bg: #0f1923;
+  --tactical-red: #ff4655;
+}
+
+html {
+  background: var(--tactical-bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(255, 70, 85, 0.08), transparent 28rem),
+    var(--tactical-bg);
+  color: #f4f4f5;
+  font-family: "Rajdhani", "Arial Narrow", Arial, sans-serif;
+}
+
+button,
+input,
+label,
+select,
+textarea {
+  font: inherit;
+}
+
+.tactical-page {
+  position: relative;
+  isolation: isolate;
+}
+
+.tactical-page::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 32px 32px;
+  content: "";
+  mask-image: linear-gradient(to bottom, black, transparent 90%);
+  pointer-events: none;
+}
+
+.hud-panel,
+.tactical-page .group {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.25rem;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+
+.hud-panel::after,
+.tactical-page .group::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 70, 85, 0.14) 50%, transparent 65%);
+  content: "";
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: opacity 0.25s ease, transform 0.55s ease;
+  pointer-events: none;
+}
+
+.hud-panel:hover,
+.tactical-page .group:hover {
+  border-color: rgba(255, 70, 85, 0.65);
+  box-shadow: 0 0 28px rgba(255, 70, 85, 0.16);
+}
+
+.hud-panel:hover::after,
+.tactical-page .group:hover::after {
+  opacity: 1;
+  transform: translateX(100%);
+}
+
+.tactical-page button:not(:disabled),
+.tactical-page a {
+  transition: transform 0.22s ease, filter 0.22s ease, box-shadow 0.22s ease;
+}
+
+.tactical-page button:not(:disabled):hover,
+.tactical-page a:hover {
+  filter: brightness(1.08);
+}
+
+.tactical-page button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.hud-skeleton {
+  overflow: hidden;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 70, 85, 0.2) 50%, rgba(255, 255, 255, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: hud-shimmer 1.6s ease-in-out infinite;
+}
+
+.hud-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--tactical-red);
+  box-shadow: 0 0 12px var(--tactical-red);
+  animation: hud-pulse 1.4s ease-in-out infinite;
+}
+
+.badge-card {
+  perspective: 900px;
+}
+
+.badge-card-inner {
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.badge-card:hover .badge-card-inner,
+.badge-card:focus-within .badge-card-inner {
+  transform: rotateY(180deg);
+}
+
+.badge-face {
+  backface-visibility: hidden;
+  clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+}
+
+.badge-back {
+  transform: rotateY(180deg);
+}
+
+@keyframes hud-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@keyframes hud-pulse {
+  50% { opacity: 0.35; transform: scale(0.7); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .shiny-text {
   display: inline-block;
 }
@@ -136,7 +285,7 @@
   display: flex;
   white-space: nowrap;
   text-align: center;
-  font-family: sans-serif;
+  font-family: inherit;
   font-size: 2.25rem;
   font-weight: bold;
   letter-spacing: -0.02em;

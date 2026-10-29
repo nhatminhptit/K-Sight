@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import playerRoutes from "./src/routes/player.route.js";
 import authRoutes from "./src/routes/auth.route.js";
+import leaderboardRoutes from "./src/routes/leaderboard.route.js";
 
 dotenv.config();
 
@@ -14,6 +15,7 @@ app.use(express.json());
 
 app.use("/api", playerRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api", leaderboardRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server Backend đang chạy tại http://localhost:${PORT}`);

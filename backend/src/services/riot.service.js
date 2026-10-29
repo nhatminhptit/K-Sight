@@ -76,21 +76,43 @@ export const getPlayerMatches = async (region, name, tag) => {
       `/v3/matches/${encodeRiotPart(region)}/${encodeRiotPart(cleanName)}/${encodeRiotPart(cleanTag)}?size=10`,
     );
 
-    const cleanMatches = response.map((match) => {
-      const playerStats = match.players.all_players.find(
+    const cleanMatches = (Array.isArray(response) ? response : []).map((match) => {
+      const playerStats = match?.players?.all_players?.find(
         (p) =>
-          p.name.toLowerCase() === cleanName.toLowerCase() &&
-          p.tag.toLowerCase() === cleanTag.toLowerCase(),
+          p?.name?.toLowerCase() === cleanName.toLowerCase() &&
+          p?.tag?.toLowerCase() === cleanTag.toLowerCase(),
       );
 
+      const rounds = Array.isArray(match.rounds)
+        ? match.rounds.map((round) => {
+            const roundPlayerStats = Array.isArray(round?.player_stats)
+              ? round.player_stats.map((player) => ({
+                  ...player,
+                  player_display_name:
+                    player?.player_display_name ??
+                    player?.name ??
+                    player?.player_name ??
+                    null,
+                }))
+              : [];
+
+            return {
+              winning_team: round?.winning_team ?? null,
+              end_type: round?.end_type ?? null,
+              player_stats: roundPlayerStats,
+            };
+          })
+        : [];
+
       return {
-        matchId: match.metadata.matchid,
-        gameMode: match.metadata.mode,
-        metadata: match.metadata,
-        gameStartMillis: match.metadata.game_start,
+        matchId: match?.metadata?.matchid ?? null,
+        gameMode: match?.metadata?.mode ?? "Unknown",
+        metadata: match?.metadata ?? {},
+        gameStartMillis: match?.metadata?.game_start ?? null,
         agent: playerStats?.character || "Unknown",
         team: playerStats?.team || "Unknown",
         assets: playerStats?.assets ?? {},
+        rounds,
         stats: {
           score: playerStats?.stats?.score || 0,
           kills: playerStats?.stats?.kills || 0,
@@ -107,8 +129,8 @@ export const getPlayerMatches = async (region, name, tag) => {
         },
         won:
           playerStats?.team === "Red"
-            ? match.teams.red.has_won
-            : match.teams.blue.has_won,
+            ? Boolean(match?.teams?.red?.has_won)
+            : Boolean(match?.teams?.blue?.has_won),
       };
     });
 

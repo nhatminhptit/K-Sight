@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useDispatch } from "react-redux";
 import { useNavigate } from "react-router-dom";
@@ -7,6 +7,7 @@ import toast, { Toaster } from "react-hot-toast";
 import { Eye, EyeOff, Gamepad2, Lock, Mail, User } from "lucide-react";
 import axiosClient from "../utils/axiosClient";
 import { loginSuccess } from "../store/authSlice";
+import useFetchPublicData from "../hooks/useFetchPublicData";
 
 export default function Login() {
   const dispatch = useDispatch();
@@ -17,6 +18,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const { fetchData: fetchPublicData } = useFetchPublicData();
 
   // State lưu dữ liệu form
   const [formData, setFormData] = useState({
@@ -73,12 +75,13 @@ export default function Login() {
         setIsLoading(true);
 
         // BƯỚC 1: Dùng token vừa nhận được để xin thông tin User từ Google
-        const userInfo = await fetch(
+        const userInfo = await fetchPublicData(
           "https://www.googleapis.com/oauth2/v3/userinfo",
           {
             headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
           },
-        ).then((res) => res.json());
+        );
+        if (!userInfo) throw new Error("Không thể xác thực tài khoản Google.");
 
         // BƯỚC 2: Gửi chính xác email và googleId lên Backend của bạn
         const data = await axiosClient.post("/auth/google", {
@@ -119,7 +122,7 @@ export default function Login() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.35 }}
-      className="min-h-dvh w-full flex items-center justify-center py-8 px-4 relative overflow-hidden bg-[#0f1923]"
+      className="tactical-page min-h-screen w-full flex items-center justify-center px-3 py-4 font-sans relative overflow-hidden bg-[#0f1923] sm:px-4"
     >
       {/* Background & Animations */}
       <div className="absolute inset-0 z-0">
@@ -152,7 +155,12 @@ export default function Login() {
       <Toaster position="top-center" reverseOrder={false} />
 
       {/* Main Form Card */}
-      <div className="w-full max-w-130 z-20 bg-[#111a22]/95 backdrop-blur-xl border border-[#ff4655]/20 rounded-3xl shadow-[0_0_45px_rgba(255,70,85,0.15)] p-6 sm:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 24, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.45, ease: "easeOut" }}
+        className="hud-panel w-full max-w-130 z-20 bg-[#111a22]/95 backdrop-blur-xl border border-[#ff4655]/20 rounded-3xl shadow-[0_0_45px_rgba(255,70,85,0.15)] p-4 sm:p-6"
+      >
         <div className="text-center space-y-2 mb-4">
           <div className="flex justify-center">
             <div className="relative">
@@ -194,9 +202,9 @@ export default function Login() {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
+        <form onSubmit={handleSubmit} className="space-y-2.5 font-sans">
           {!isLogin ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <label className="text-[#d9d9d9] text-sm flex items-center gap-2">
                   <Mail className="w-4 h-4 text-[#ff4655]" />
@@ -434,7 +442,7 @@ export default function Login() {
             Đăng nhập bằng Google
           </button>
         </div>
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
